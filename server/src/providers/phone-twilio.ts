@@ -110,7 +110,11 @@ export class TwilioPhoneProvider implements PhoneProvider {
    * Get TwiML response for connecting media stream
    * This is called when Twilio requests the webhook URL after call is answered
    */
-  getStreamConnectXml(streamUrl: string): string {
+  getStreamConnectXml(streamUrl: string, customParameters?: Record<string, string>): string {
+    const parameterXml = Object.entries(customParameters || {})
+      .map(([name, value]) => `\n      <Parameter name="${escapeXml(name)}" value="${escapeXml(value)}" />`)
+      .join('');
+
     // <Connect><Stream> creates a bidirectional stream
     // - Automatically receives only inbound audio (user's voice) for STT
     // - Allows sending audio back via WebSocket media messages
@@ -118,8 +122,18 @@ export class TwilioPhoneProvider implements PhoneProvider {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="${streamUrl}" />
+    <Stream url="${streamUrl}">${parameterXml}
+    </Stream>
   </Connect>
 </Response>`;
   }
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll("'", '&apos;');
 }

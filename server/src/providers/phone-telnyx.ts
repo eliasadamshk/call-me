@@ -181,7 +181,7 @@ export class TelnyxPhoneProvider implements PhoneProvider {
   }
 
   // Legacy method for Twilio compatibility - not used with API v2
-  getStreamConnectXml(streamUrl: string): string {
+  getStreamConnectXml(streamUrl: string, _customParameters?: Record<string, string>): string {
     // For API v2, we use startStreaming() instead
     // This is kept for interface compatibility but shouldn't be called
     console.error('Warning: getStreamConnectXml called on Telnyx v2 provider');

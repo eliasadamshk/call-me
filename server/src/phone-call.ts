@@ -127,26 +127,32 @@ export class CallManager {
           }
           console.error(`[Security] WebSocket token validated for call ${callId}`);
         } else if (!callId) {
+          const isTwilio = this.config.providers.phone.name === 'twilio';
+          if (isTwilio && !token) {
+            callId = `pending-${Date.now()}`;
+            console.error(`[WebSocket] Accepting pending Twilio media stream without URL token: ${callId}`);
+          } else {
           // Token missing or not found - only allow fallback for ngrok free tier
-          const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
-          if (isNgrokFreeTier) {
+            const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
+            if (isNgrokFreeTier) {
             // Fallback: find the most recent active call (ngrok compatibility mode)
             // Token lookup can fail due to timing issues with ngrok's free tier
-            const activeCallIds = Array.from(this.activeCalls.keys());
-            if (activeCallIds.length > 0) {
-              callId = activeCallIds[activeCallIds.length - 1];
-              console.error(`[WebSocket] Token not found, using fallback call ID: ${callId} (ngrok compatibility mode)`);
-            } else {
+              const activeCallIds = Array.from(this.activeCalls.keys());
+              if (activeCallIds.length > 0) {
+                callId = activeCallIds[activeCallIds.length - 1];
+                console.error(`[WebSocket] Token not found, using fallback call ID: ${callId} (ngrok compatibility mode)`);
+              } else {
               // No active calls yet - create a placeholder and accept anyway
               // The connection handler will associate it with the correct call
-              callId = `pending-${Date.now()}`;
-              console.error(`[WebSocket] No active calls, using placeholder: ${callId} (ngrok compatibility mode)`);
+                callId = `pending-${Date.now()}`;
+                console.error(`[WebSocket] No active calls, using placeholder: ${callId} (ngrok compatibility mode)`);
+              }
+            } else {
+              console.error('[Security] Rejecting WebSocket: missing or invalid token');
+              socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+              socket.destroy();
+              return;
             }
-          } else {
-            console.error('[Security] Rejecting WebSocket: missing or invalid token');
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-            return;
           }
         }
 
@@ -160,13 +166,14 @@ export class CallManager {
       }
     });
 
-    this.wss.on('connection', (ws: WebSocket, _request: IncomingMessage, callId: string) => {
+    this.wss.on('connection', (ws: WebSocket, _request: IncomingMessage, initialCallId: string) => {
+      let callId = initialCallId;
       console.error(`Media stream WebSocket connected for call ${callId}`);
 
       // Associate the WebSocket with the call immediately (token already validated)
-      const state = this.activeCalls.get(callId);
-      if (state) {
-        state.ws = ws;
+      const initialState = this.activeCalls.get(callId);
+      if (initialState) {
+        initialState.ws = ws;
       }
 
       ws.on('message', (message: Buffer | string) => {
@@ -176,6 +183,40 @@ export class CallManager {
         if (msgBuffer.length > 0 && msgBuffer[0] === 0x7b) {
           try {
             const msg = JSON.parse(msgBuffer.toString());
+
+            // Twilio doesn't support query params on <Stream url>, so bind pending
+            // sockets using custom parameters from the start event.
+            if (msg.event === 'start' && callId.startsWith('pending-')) {
+              const startCallSid = msg.start?.callSid as string | undefined;
+              const startToken = msg.start?.customParameters?.token as string | undefined;
+              const tokenCallId = startToken ? this.wsTokenToCallId.get(startToken) : undefined;
+              const sidCallId = startCallSid ? this.callControlIdToCallId.get(startCallSid) : undefined;
+              const resolvedCallId = tokenCallId || sidCallId;
+
+              if (!resolvedCallId) {
+                console.error('[Security] Rejecting pending WebSocket: unable to associate Twilio stream with active call');
+                ws.close();
+                return;
+              }
+
+              const resolvedState = this.activeCalls.get(resolvedCallId);
+              if (!resolvedState) {
+                console.error(`[Security] Rejecting pending WebSocket: active call state not found for ${resolvedCallId}`);
+                ws.close();
+                return;
+              }
+
+              if (startToken && !validateWebSocketToken(resolvedState.wsToken, startToken)) {
+                console.error(`[Security] Rejecting pending WebSocket: Twilio custom parameter token validation failed for ${resolvedCallId}`);
+                ws.close();
+                return;
+              }
+
+              callId = resolvedCallId;
+              resolvedState.ws = ws;
+              console.error(`[Security] Twilio media stream associated with call ${callId}`);
+            }
+
             const msgState = this.activeCalls.get(callId);
 
             // Capture streamSid from "start" event (required for sending audio back)
@@ -379,8 +420,8 @@ export class CallManager {
     }
 
     // For 'in-progress' or 'ringing' status, return TwiML to start media stream
-    // Include security token in the stream URL
     let streamUrl = `wss://${new URL(this.config.publicUrl).host}/media-stream`;
+    let customParameters: Record<string, string> | undefined;
 
     // Find the call state to get the WebSocket token
     if (callSid) {
@@ -388,12 +429,12 @@ export class CallManager {
       if (callId) {
         const state = this.activeCalls.get(callId);
         if (state) {
-          streamUrl += `?token=${encodeURIComponent(state.wsToken)}`;
+          customParameters = { token: state.wsToken };
         }
       }
     }
 
-    const xml = this.config.providers.phone.getStreamConnectXml(streamUrl);
+    const xml = this.config.providers.phone.getStreamConnectXml(streamUrl, customParameters);
     res.writeHead(200, { 'Content-Type': 'application/xml' });
     res.end(xml);
   }
