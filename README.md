@@ -1,15 +1,16 @@
 # CallMe
 
-**Minimal plugin that lets Claude Code call you on the phone.**
+> Fork of [ZeframLou/call-me](https://github.com/ZeframLou/call-me) with security hardening and support for background agents.
 
-Start a task, walk away. Your phone/watch rings when Claude is done, stuck, or needs a decision.
+**MCP server that lets AI agents call you on the phone.**
 
-<img src="./call-me-comic-min.png" width="800" alt="CallMe comic strip">
+Start a task, walk away. Your phone rings when the agent is done, stuck, or needs a decision. Built for background agents (Claude Code, Cursor Cloud Agents, custom agent loops) that run unattended and need a reliable way to reach a human.
 
-- **Minimal plugin** - Does one thing: call you on the phone. No crazy setups.
-- **Multi-turn conversations** - Talk through decisions naturally.
-- **Works anywhere** - Smartphone, smartwatch, or even landline!
-- **Tool-use composable** - Claude can e.g. do a web search while on a call with you.
+- **Background-agent friendly** - Designed for long-running, unattended agents that need human input at key decision points.
+- **Multi-turn conversations** - Talk through decisions naturally over a real phone call.
+- **Works anywhere** - Smartphone, smartwatch, or landline.
+- **Tool-use composable** - The agent can do other work (web searches, file edits) while on a call with you.
+- **Hardened auth** - Required API tokens, webhook signature verification, and timing-safe WebSocket authentication.
 
 ---
 
@@ -77,6 +78,7 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
     "CALLME_PHONE_NUMBER": "+15551234567",
     "CALLME_USER_PHONE_NUMBER": "+15559876543",
     "CALLME_OPENAI_API_KEY": "sk-...",
+    "CALLME_API_AUTH_TOKEN": "your-secret-token",
     "CALLME_NGROK_AUTHTOKEN": "your-ngrok-token"
   }
 }
@@ -92,6 +94,7 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 | `CALLME_PHONE_NUMBER` | Phone number Claude calls from (E.164 format) |
 | `CALLME_USER_PHONE_NUMBER` | Your phone number to receive calls |
 | `CALLME_OPENAI_API_KEY` | OpenAI API key (for TTS and realtime STT) |
+| `CALLME_API_AUTH_TOKEN` | Shared secret for MCP HTTP request authentication |
 | `CALLME_NGROK_AUTHTOKEN` | ngrok auth token for webhook tunneling. Required unless `CALLME_PUBLIC_URL` is set |
 
 #### Optional Variables
@@ -103,7 +106,6 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 | `CALLME_PUBLIC_URL` | - | Public base URL for a hosted deployment. When set, CallMe skips ngrok |
 | `CALLME_MCP_TRANSPORT` | `stdio` | MCP transport: `stdio`, `streamable-http`, or `both` |
 | `CALLME_MCP_HTTP_PATH` | `/mcp` | Streamable HTTP endpoint path when using `streamable-http` or `both` |
-| `CALLME_API_AUTH_TOKEN` | - | Optional shared API token for MCP HTTP requests |
 | `CALLME_NGROK_DOMAIN` | - | Custom ngrok domain (paid feature) |
 | `CALLME_TRANSCRIPT_TIMEOUT_MS` | `180000` | Timeout for user speech (3 minutes) |
 | `CALLME_STT_SILENCE_DURATION_MS` | `800` | Silence duration to detect end of speech |
@@ -144,7 +146,7 @@ The MCP server runs locally and automatically creates an ngrok tunnel for phone 
 
 If you set `CALLME_PUBLIC_URL`, the server uses that URL instead and does not start ngrok. This is the intended mode for hosting behind your own web server or reverse proxy.
 
-If you set `CALLME_API_AUTH_TOKEN`, clients must send `Authorization: Bearer <token>` when calling the MCP HTTP endpoint. Phone provider webhooks and media-stream connections continue to use their existing signature/token checks.
+Clients must send `Authorization: Bearer <token>` (using `CALLME_API_AUTH_TOKEN`) when calling the MCP HTTP endpoint. Phone provider webhooks and media-stream connections use their own signature/token verification.
 
 ## Streamable HTTP Transport
 
@@ -160,23 +162,20 @@ This starts the normal webhook server plus `POST/GET/DELETE /mcp` for MCP over S
 
 Use `CALLME_MCP_TRANSPORT=both` if you want to keep the local `stdio` transport while also exposing Streamable HTTP.
 
-### Twilio + Streamable HTTP + ngrok Script
+### Quick Launch Script
 
-If you want a single local launcher for Twilio with Streamable HTTP exposed over ngrok:
+`run.sh` is a single launcher for Twilio + Streamable HTTP + ngrok:
 
-1. Fill in `.env.example` or edit the local gitignored `.env`
+1. Copy `.env.example` to `.env` and fill in your values
 2. Run:
 
 ```bash
-./run-twilio-streamable-http-ngrok.sh
+./run.sh
 ```
 
-That script forces the Twilio provider, loads your `.env`, starts ngrok, and exposes:
+It loads your `.env`, validates required variables, installs dependencies if needed, and starts the server. After startup, point your Twilio voice webhook to `<ngrok-url>/twiml` and use the MCP endpoint at `<ngrok-url>/mcp`.
 
-- Twilio voice webhook at `<ngrok-url>/twiml`
-- MCP endpoint at `<ngrok-url>/mcp`
-
-If you keep `CALLME_MCP_TRANSPORT=both`, stdio remains available alongside Streamable HTTP.
+You can pass a custom env file path: `./run.sh /path/to/.env`
 
 ---
 
@@ -219,6 +218,7 @@ docker compose -f docker-compose.prod.yml up -d
 Required production runtime values:
 
 - `CALLME_PUBLIC_URL`
+- `CALLME_API_AUTH_TOKEN`
 - `CALLME_PHONE_PROVIDER`
 - `CALLME_PHONE_ACCOUNT_SID`
 - `CALLME_PHONE_AUTH_TOKEN`
