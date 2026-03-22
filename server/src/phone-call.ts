@@ -19,6 +19,7 @@ import {
   loadApiAuthToken,
   writeUnauthorizedResponse,
 } from './api-auth.js';
+import { describeIncomingRequest, getExternalRequestUrl } from './request-debug.js';
 
 interface CallState {
   callId: string;
@@ -317,18 +318,19 @@ export class CallManager {
           // Validate Twilio signature
           const authToken = this.config.providerConfig.phoneAuthToken;
           const signature = req.headers['x-twilio-signature'] as string | undefined;
-          // Use the known public URL directly - reconstructing from headers fails with ngrok
-          // because ngrok doesn't preserve headers exactly as Twilio sends them
-          const webhookUrl = `${this.config.publicUrl}/twiml`;
+          const webhookUrl = getExternalRequestUrl(req, this.config.publicUrl);
 
           if (!validateTwilioSignature(authToken, signature, webhookUrl, params)) {
+            console.error('[Security] Twilio webhook request details:', JSON.stringify(describeIncomingRequest(req, this.config.publicUrl)));
             const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
             if (isNgrokFreeTier) {
               // Only log if ngrok free tier is used
               // Log for debugging but proceed anyway - ngrok free tier causes signature mismatches
               console.error('[Security] Twilio signature validation failed (proceeding anyway for ngrok compatibility)');
+              console.error(`[Security] Twilio webhook URL used: ${webhookUrl}`);
             } else {
               console.error('[Security] Rejecting Twilio webhook: invalid signature');
+              console.error(`[Security] Twilio webhook URL used: ${webhookUrl}`);
               res.writeHead(401);
               res.end('Invalid signature');
               return;

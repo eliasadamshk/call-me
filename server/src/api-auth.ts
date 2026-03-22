@@ -25,6 +25,20 @@ function getAuthorizationHeaderValue(req: IncomingMessage): string | undefined {
   return Array.isArray(header) ? header[0] : header;
 }
 
+export function describeAuthorizationHeader(req: IncomingMessage, expectedToken?: string): Record<string, string | number | boolean | undefined> {
+  const authorization = getAuthorizationHeaderValue(req);
+  const [scheme, ...rest] = authorization?.trim().split(/\s+/) || [];
+  const token = rest.length > 0 ? rest.join(' ') : undefined;
+
+  return {
+    authorizationPresent: authorization !== undefined,
+    authorizationScheme: scheme || undefined,
+    bearerTokenPresent: token !== undefined,
+    receivedTokenLength: token?.length,
+    expectedTokenLength: expectedToken?.length,
+  };
+}
+
 function getBearerToken(req: IncomingMessage): string | undefined {
   const authorization = getAuthorizationHeaderValue(req);
   if (!authorization) {

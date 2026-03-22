@@ -5,7 +5,7 @@
  * cryptographic signatures from phone providers.
  */
 
-import { createHmac, verify } from 'crypto';
+import { createHmac, timingSafeEqual, verify } from 'crypto';
 
 /**
  * Validate Twilio webhook signature
@@ -34,9 +34,15 @@ export function validateTwilioSignature(
   let dataToSign = url;
 
   // Sort params alphabetically and append name+value
-  const sortedParams = Array.from(params.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0])
-  );
+  const sortedParams = Array.from(params.entries()).sort(([aKey, aValue], [bKey, bValue]) => {
+    if (aKey === bKey) {
+      if (aValue === bValue) {
+        return 0;
+      }
+      return aValue < bValue ? -1 : 1;
+    }
+    return aKey < bKey ? -1 : 1;
+  });
 
   for (const [key, value] of sortedParams) {
     dataToSign += key + value;
@@ -47,7 +53,7 @@ export function validateTwilioSignature(
     .update(dataToSign)
     .digest('base64');
 
-  const valid = signature === expectedSignature;
+  const valid = secureCompare(signature, expectedSignature);
 
   if (!valid) {
     console.error('[Security] Twilio signature mismatch');
@@ -56,6 +62,15 @@ export function validateTwilioSignature(
   }
 
   return valid;
+}
+
+function secureCompare(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 /**
