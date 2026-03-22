@@ -92,7 +92,7 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 | `CALLME_PHONE_NUMBER` | Phone number Claude calls from (E.164 format) |
 | `CALLME_USER_PHONE_NUMBER` | Your phone number to receive calls |
 | `CALLME_OPENAI_API_KEY` | OpenAI API key (for TTS and realtime STT) |
-| `CALLME_NGROK_AUTHTOKEN` | ngrok auth token for webhook tunneling |
+| `CALLME_NGROK_AUTHTOKEN` | ngrok auth token for webhook tunneling. Required unless `CALLME_PUBLIC_URL` is set |
 
 #### Optional Variables
 
@@ -100,6 +100,9 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 |----------|---------|-------------|
 | `CALLME_TTS_VOICE` | `onyx` | OpenAI voice: alloy, echo, fable, onyx, nova, shimmer |
 | `CALLME_PORT` | `3333` | Local HTTP server port |
+| `CALLME_PUBLIC_URL` | - | Public base URL for a hosted deployment. When set, CallMe skips ngrok |
+| `CALLME_MCP_TRANSPORT` | `stdio` | MCP transport: `stdio`, `streamable-http`, or `both` |
+| `CALLME_MCP_HTTP_PATH` | `/mcp` | Streamable HTTP endpoint path when using `streamable-http` or `both` |
 | `CALLME_NGROK_DOMAIN` | - | Custom ngrok domain (paid feature) |
 | `CALLME_TRANSCRIPT_TIMEOUT_MS` | `180000` | Timeout for user speech (3 minutes) |
 | `CALLME_STT_SILENCE_DURATION_MS` | `800` | Silence duration to detect end of speech |
@@ -137,6 +140,40 @@ Plugin ────stdio──────────────────�
 ```
 
 The MCP server runs locally and automatically creates an ngrok tunnel for phone provider webhooks.
+
+If you set `CALLME_PUBLIC_URL`, the server uses that URL instead and does not start ngrok. This is the intended mode for hosting behind your own web server or reverse proxy.
+
+## Streamable HTTP Transport
+
+By default CallMe exposes MCP over `stdio`, which is what Claude Code expects for local plugins. You can also expose MCP over Streamable HTTP for a hosted deployment:
+
+```bash
+CALLME_MCP_TRANSPORT=streamable-http \
+CALLME_PUBLIC_URL=https://callme.example.com \
+bun run src/index.ts
+```
+
+This starts the normal webhook server plus `POST/GET/DELETE /mcp` for MCP over Streamable HTTP.
+
+Use `CALLME_MCP_TRANSPORT=both` if you want to keep the local `stdio` transport while also exposing Streamable HTTP.
+
+### Twilio + Streamable HTTP + ngrok Script
+
+If you want a single local launcher for Twilio with Streamable HTTP exposed over ngrok:
+
+1. Fill in [`.env.example`](/Users/eliasadams/Documents/GitHub/call-me/.env.example) or edit the local gitignored [`.env`](/Users/eliasadams/Documents/GitHub/call-me/.env)
+2. Run:
+
+```bash
+./run-twilio-streamable-http-ngrok.sh
+```
+
+That script forces the Twilio provider, loads your `.env`, starts ngrok, and exposes:
+
+- Twilio voice webhook at `<ngrok-url>/twiml`
+- MCP endpoint at `<ngrok-url>/mcp`
+
+If you keep `CALLME_MCP_TRANSPORT=both`, stdio remains available alongside Streamable HTTP.
 
 ---
 

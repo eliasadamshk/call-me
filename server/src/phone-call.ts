@@ -39,6 +39,21 @@ export interface ServerConfig {
   transcriptTimeoutMs: number;
 }
 
+export type HttpRequestHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+) => boolean | Promise<boolean>;
+
+interface StartServerOptions {
+  handleRequest?: HttpRequestHandler;
+}
+
+function isNgrokFreeTierHost(publicUrl: string): boolean {
+  const hostname = new URL(publicUrl).hostname;
+  return hostname.endsWith('.ngrok-free.app') || hostname.endsWith('.ngrok-free.dev');
+}
+
 export function loadServerConfig(publicUrl: string): ServerConfig {
   const providerConfig = loadProviderConfig();
   const errors = validateProviderConfig(providerConfig);
@@ -80,23 +95,9 @@ export class CallManager {
     this.config = config;
   }
 
-  startServer(): void {
+  startServer(options: StartServerOptions = {}): void {
     this.httpServer = createServer((req, res) => {
-      const url = new URL(req.url!, `http://${req.headers.host}`);
-
-      if (url.pathname === '/twiml') {
-        this.handlePhoneWebhook(req, res);
-        return;
-      }
-
-      if (url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
-        return;
-      }
-
-      res.writeHead(404);
-      res.end('Not Found');
+      void this.handleHttpRequest(req, res, options.handleRequest);
     });
 
     this.wss = new WebSocketServer({ noServer: true });
@@ -120,7 +121,7 @@ export class CallManager {
           console.error(`[Security] WebSocket token validated for call ${callId}`);
         } else if (!callId) {
           // Token missing or not found - only allow fallback for ngrok free tier
-          const isNgrokFreeTier = new URL(this.config.publicUrl).hostname.endsWith('.ngrok-free.dev');
+          const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
           if (isNgrokFreeTier) {
             // Fallback: find the most recent active call (ngrok compatibility mode)
             // Token lookup can fail due to timing issues with ngrok's free tier
@@ -204,6 +205,40 @@ export class CallManager {
     });
   }
 
+  private async handleHttpRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+    handleRequest?: HttpRequestHandler,
+  ): Promise<void> {
+    try {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+
+      if (url.pathname === '/twiml') {
+        this.handlePhoneWebhook(req, res);
+        return;
+      }
+
+      if (url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
+        return;
+      }
+
+      if (handleRequest && await handleRequest(req, res, url)) {
+        return;
+      }
+
+      res.writeHead(404);
+      res.end('Not Found');
+    } catch (error) {
+      console.error('Error handling HTTP request:', error);
+      if (!res.headersSent) {
+        res.writeHead(500);
+      }
+      res.end('Internal Server Error');
+    }
+  }
+
   /**
    * Extract INBOUND audio data from WebSocket message (filters out outbound/TTS audio)
    */
@@ -281,7 +316,7 @@ export class CallManager {
           const webhookUrl = `${this.config.publicUrl}/twiml`;
 
           if (!validateTwilioSignature(authToken, signature, webhookUrl, params)) {
-            const isNgrokFreeTier = new URL(this.config.publicUrl).hostname.endsWith('.ngrok-free.dev');
+            const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
             if (isNgrokFreeTier) {
               // Only log if ngrok free tier is used
               // Log for debugging but proceed anyway - ngrok free tier causes signature mismatches
