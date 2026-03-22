@@ -184,18 +184,14 @@ export function validateWebSocketToken(
     return false;
   }
 
-  // Use timing-safe comparison to prevent timing attacks
-  if (expectedToken.length !== receivedToken.length) {
-    console.error('[Security] WebSocket token length mismatch');
+  const expectedBuffer = Buffer.from(expectedToken);
+  const receivedBuffer = Buffer.from(receivedToken);
+  if (expectedBuffer.length !== receivedBuffer.length) {
+    console.error('[Security] WebSocket token mismatch');
     return false;
   }
 
-  let result = 0;
-  for (let i = 0; i < expectedToken.length; i++) {
-    result |= expectedToken.charCodeAt(i) ^ receivedToken.charCodeAt(i);
-  }
-
-  const valid = result === 0;
+  const valid = timingSafeEqual(expectedBuffer, receivedBuffer);
   if (!valid) {
     console.error('[Security] WebSocket token mismatch');
   }

@@ -1,9 +1,12 @@
 import { timingSafeEqual } from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 
-export function loadApiAuthToken(): string | undefined {
+export function loadApiAuthToken(): string {
   const token = process.env.CALLME_API_AUTH_TOKEN?.trim();
-  return token || undefined;
+  if (!token) {
+    throw new Error('CALLME_API_AUTH_TOKEN environment variable is required');
+  }
+  return token;
 }
 
 function secureTokenEquals(expected: string, received: string | undefined): boolean {
@@ -25,20 +28,6 @@ function getAuthorizationHeaderValue(req: IncomingMessage): string | undefined {
   return Array.isArray(header) ? header[0] : header;
 }
 
-export function describeAuthorizationHeader(req: IncomingMessage, expectedToken?: string): Record<string, string | number | boolean | undefined> {
-  const authorization = getAuthorizationHeaderValue(req);
-  const [scheme, ...rest] = authorization?.trim().split(/\s+/) || [];
-  const token = rest.length > 0 ? rest.join(' ') : undefined;
-
-  return {
-    authorizationPresent: authorization !== undefined,
-    authorizationScheme: scheme || undefined,
-    bearerTokenPresent: token !== undefined,
-    receivedTokenLength: token?.length,
-    expectedTokenLength: expectedToken?.length,
-  };
-}
-
 function getBearerToken(req: IncomingMessage): string | undefined {
   const authorization = getAuthorizationHeaderValue(req);
   if (!authorization) {
@@ -53,11 +42,7 @@ function getBearerToken(req: IncomingMessage): string | undefined {
   return rest.join(' ');
 }
 
-export function isRequestAuthorized(req: IncomingMessage, apiAuthToken: string | undefined): boolean {
-  if (!apiAuthToken) {
-    return true;
-  }
-
+export function isRequestAuthorized(req: IncomingMessage, apiAuthToken: string): boolean {
   const bearerToken = getBearerToken(req);
   return secureTokenEquals(apiAuthToken, bearerToken);
 }

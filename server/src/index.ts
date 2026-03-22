@@ -18,13 +18,11 @@ import {
   loadServerConfig,
 } from './phone-call.js';
 import {
-  describeAuthorizationHeader,
   isRequestAuthorized,
   loadApiAuthToken,
   writeUnauthorizedResponse,
 } from './api-auth.js';
 import { startNgrok, stopNgrok } from './ngrok.js';
-import { describeIncomingRequest } from './request-debug.js';
 
 type McpTransportMode = 'stdio' | 'sse' | 'streamable-http' | 'both';
 
@@ -33,7 +31,7 @@ interface RuntimeConfig {
   publicUrlOverride?: string;
   mcpTransport: McpTransportMode;
   mcpHttpPath: string;
-  apiAuthToken?: string;
+  apiAuthToken: string;
 }
 
 interface StreamableSession {
@@ -245,10 +243,6 @@ function createWebTransportRequestHandler(
 
     if (!isRequestAuthorized(req, config.apiAuthToken)) {
       console.error(`[Security] Rejecting ${req.method} ${url.pathname}: API auth failed`);
-      console.error('[Security] MCP auth request details:', JSON.stringify({
-        ...describeIncomingRequest(req, config.publicUrlOverride),
-        ...describeAuthorizationHeader(req, config.apiAuthToken),
-      }));
       writeUnauthorizedResponse(res);
       return true;
     }

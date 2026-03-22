@@ -53,23 +53,3 @@ export function getExternalRequestUrl(req: IncomingMessage, publicUrl: string): 
   return `${proto}://${host}${requestTarget}`;
 }
 
-export function describeIncomingRequest(req: IncomingMessage, publicUrl?: string): Record<string, string | undefined> {
-  const description: Record<string, string | undefined> = {
-    method: req.method,
-    url: req.url,
-    host: getHeaderValue(req.headers.host),
-    'x-forwarded-host': getHeaderValue(req.headers['x-forwarded-host']),
-    'x-forwarded-proto': getHeaderValue(req.headers['x-forwarded-proto']),
-    forwarded: getHeaderValue(req.headers.forwarded),
-    'cf-visitor': getHeaderValue(req.headers['cf-visitor']),
-    'cf-ray': getHeaderValue(req.headers['cf-ray']),
-    'content-type': getHeaderValue(req.headers['content-type']),
-    'user-agent': getHeaderValue(req.headers['user-agent']),
-  };
-
-  if (publicUrl) {
-    description.externalUrl = getExternalRequestUrl(req, publicUrl);
-  }
-
-  return description;
-}

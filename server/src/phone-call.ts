@@ -19,7 +19,7 @@ import {
   loadApiAuthToken,
   writeUnauthorizedResponse,
 } from './api-auth.js';
-import { describeIncomingRequest, getExternalRequestUrl } from './request-debug.js';
+import { getExternalRequestUrl } from './request-debug.js';
 
 interface CallState {
   callId: string;
@@ -54,11 +54,6 @@ export type HttpRequestHandler = (
 
 interface StartServerOptions {
   handleRequest?: HttpRequestHandler;
-}
-
-function isNgrokFreeTierHost(publicUrl: string): boolean {
-  const hostname = new URL(publicUrl).hostname;
-  return hostname.endsWith('.ngrok-free.app') || hostname.endsWith('.ngrok-free.dev');
 }
 
 export function loadServerConfig(publicUrl: string): ServerConfig {
@@ -129,30 +124,15 @@ export class CallManager {
         } else if (!callId) {
           const isTwilio = this.config.providers.phone.name === 'twilio';
           if (isTwilio && !token) {
+            // Twilio's <Stream> tag doesn't support query params in the URL,
+            // so accept as pending and validate via custom parameters in the start event
             callId = `pending-${Date.now()}`;
             console.error(`[WebSocket] Accepting pending Twilio media stream without URL token: ${callId}`);
           } else {
-          // Token missing or not found - only allow fallback for ngrok free tier
-            const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
-            if (isNgrokFreeTier) {
-            // Fallback: find the most recent active call (ngrok compatibility mode)
-            // Token lookup can fail due to timing issues with ngrok's free tier
-              const activeCallIds = Array.from(this.activeCalls.keys());
-              if (activeCallIds.length > 0) {
-                callId = activeCallIds[activeCallIds.length - 1];
-                console.error(`[WebSocket] Token not found, using fallback call ID: ${callId} (ngrok compatibility mode)`);
-              } else {
-              // No active calls yet - create a placeholder and accept anyway
-              // The connection handler will associate it with the correct call
-                callId = `pending-${Date.now()}`;
-                console.error(`[WebSocket] No active calls, using placeholder: ${callId} (ngrok compatibility mode)`);
-              }
-            } else {
-              console.error('[Security] Rejecting WebSocket: missing or invalid token');
-              socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-              socket.destroy();
-              return;
-            }
+            console.error('[Security] Rejecting WebSocket: missing or invalid token');
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
           }
         }
 
@@ -268,7 +248,7 @@ export class CallManager {
 
       if (url.pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
+        res.end(JSON.stringify({ status: 'ok' }));
         return;
       }
 
@@ -362,20 +342,10 @@ export class CallManager {
           const webhookUrl = getExternalRequestUrl(req, this.config.publicUrl);
 
           if (!validateTwilioSignature(authToken, signature, webhookUrl, params)) {
-            console.error('[Security] Twilio webhook request details:', JSON.stringify(describeIncomingRequest(req, this.config.publicUrl)));
-            const isNgrokFreeTier = isNgrokFreeTierHost(this.config.publicUrl);
-            if (isNgrokFreeTier) {
-              // Only log if ngrok free tier is used
-              // Log for debugging but proceed anyway - ngrok free tier causes signature mismatches
-              console.error('[Security] Twilio signature validation failed (proceeding anyway for ngrok compatibility)');
-              console.error(`[Security] Twilio webhook URL used: ${webhookUrl}`);
-            } else {
-              console.error('[Security] Rejecting Twilio webhook: invalid signature');
-              console.error(`[Security] Twilio webhook URL used: ${webhookUrl}`);
-              res.writeHead(401);
-              res.end('Invalid signature');
-              return;
-            }
+            console.error('[Security] Rejecting Twilio webhook: invalid signature');
+            res.writeHead(401);
+            res.end('Invalid signature');
+            return;
           }
 
           await this.handleTwilioWebhook(params, res);
