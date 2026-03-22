@@ -1,0 +1,7 @@
+.git
+.github
+.DS_Store
+.env
+node_modules
+server/node_modules
+CONVERSATION_SUMMARY.md

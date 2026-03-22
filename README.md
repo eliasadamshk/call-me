@@ -161,7 +161,7 @@ Use `CALLME_MCP_TRANSPORT=both` if you want to keep the local `stdio` transport 
 
 If you want a single local launcher for Twilio with Streamable HTTP exposed over ngrok:
 
-1. Fill in [`.env.example`](/Users/eliasadams/Documents/GitHub/call-me/.env.example) or edit the local gitignored [`.env`](/Users/eliasadams/Documents/GitHub/call-me/.env)
+1. Fill in `.env.example` or edit the local gitignored `.env`
 2. Run:
 
 ```bash
@@ -174,6 +174,64 @@ That script forces the Twilio provider, loads your `.env`, starts ngrok, and exp
 - MCP endpoint at `<ngrok-url>/mcp`
 
 If you keep `CALLME_MCP_TRANSPORT=both`, stdio remains available alongside Streamable HTTP.
+
+---
+
+## Docker
+
+- Local/build stack: `docker-compose.yml`
+- Production/GHCR stack: `docker-compose.prod.yml`
+- Environment template: `.env.example`
+
+### Local image build
+
+1. Create an env file:
+
+```bash
+cp .env.example .env
+```
+
+2. Fill in the required secrets and runtime values in `.env`
+3. Start the container:
+
+```bash
+docker compose up --build
+```
+
+This builds the local image from `Dockerfile` and exposes the app on `CALLME_PORT` (default `3333`).
+
+### Production
+
+`docker-compose.prod.yml` pulls the prebuilt GHCR image by default:
+
+- `ghcr.io/<owner>/call-me:latest`
+
+Deploy with:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Required production runtime values:
+
+- `CALLME_PUBLIC_URL`
+- `CALLME_PHONE_PROVIDER`
+- `CALLME_PHONE_ACCOUNT_SID`
+- `CALLME_PHONE_AUTH_TOKEN`
+- `CALLME_PHONE_NUMBER`
+- `CALLME_USER_PHONE_NUMBER`
+- `CALLME_OPENAI_API_KEY`
+
+If you are not setting `CALLME_PUBLIC_URL`, you also need `CALLME_NGROK_AUTHTOKEN`.
+
+Set `CALLME_IMAGE` only if you want to pin a specific SHA tag instead of `latest`.
+
+## CI/CD
+
+- `.github/workflows/deploy.yml` publishes a Docker image to GHCR on pushes to `main`
+- Tags published: `latest` and the commit SHA
+
 
 ---
 

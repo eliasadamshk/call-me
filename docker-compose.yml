@@ -1,0 +1,20 @@
+services:
+  callme:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${CALLME_IMAGE:-call-me:local}
+    env_file:
+      - ${CALLME_ENV_FILE:-.env}
+    environment:
+      CALLME_PORT: ${CALLME_PORT:-3333}
+      CALLME_MCP_TRANSPORT: ${CALLME_MCP_TRANSPORT:-streamable-http}
+      CALLME_MCP_HTTP_PATH: ${CALLME_MCP_HTTP_PATH:-/mcp}
+    ports:
+      - "${CALLME_PORT:-3333}:${CALLME_PORT:-3333}"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
