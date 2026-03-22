@@ -14,6 +14,11 @@ import {
   generateWebSocketToken,
   validateWebSocketToken,
 } from './webhook-security.js';
+import {
+  isRequestAuthorized,
+  loadApiAuthToken,
+  writeUnauthorizedResponse,
+} from './api-auth.js';
 
 interface CallState {
   callId: string;
@@ -32,6 +37,7 @@ interface CallState {
 export interface ServerConfig {
   publicUrl: string;
   port: number;
+  apiAuthToken?: string;
   phoneNumber: string;
   userPhoneNumber: string;
   providers: ProviderRegistry;

@@ -8,8 +8,10 @@ services:
       - ${CALLME_ENV_FILE:-.env}
     environment:
       CALLME_PORT: ${CALLME_PORT:-3333}
+      CALLME_PUBLIC_URL: ${CALLME_PUBLIC_URL:-}
       CALLME_MCP_TRANSPORT: ${CALLME_MCP_TRANSPORT:-streamable-http}
       CALLME_MCP_HTTP_PATH: ${CALLME_MCP_HTTP_PATH:-/mcp}
+      CALLME_API_AUTH_TOKEN: ${CALLME_API_AUTH_TOKEN:-}
     ports:
       - "${CALLME_PORT:-3333}:${CALLME_PORT:-3333}"
     restart: unless-stopped

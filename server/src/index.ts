@@ -17,6 +17,11 @@ import {
   type HttpRequestHandler,
   loadServerConfig,
 } from './phone-call.js';
+import {
+  isRequestAuthorized,
+  loadApiAuthToken,
+  writeUnauthorizedResponse,
+} from './api-auth.js';
 import { startNgrok, stopNgrok } from './ngrok.js';
 
 type McpTransportMode = 'stdio' | 'sse' | 'streamable-http' | 'both';
@@ -26,6 +31,7 @@ interface RuntimeConfig {
   publicUrlOverride?: string;
   mcpTransport: McpTransportMode;
   mcpHttpPath: string;
+  apiAuthToken?: string;
 }
 
 interface StreamableSession {
@@ -83,6 +89,7 @@ function loadRuntimeConfig(): RuntimeConfig {
     publicUrlOverride,
     mcpTransport: rawTransport === 'sse' ? 'streamable-http' : rawTransport,
     mcpHttpPath,
+    apiAuthToken: loadApiAuthToken(),
   };
 }
 
@@ -232,6 +239,12 @@ function createWebTransportRequestHandler(
     const sessionId = getHeaderValue(req.headers['mcp-session-id']);
     if (url.pathname !== config.mcpHttpPath) {
       return false;
+    }
+
+    if (!isRequestAuthorized(req, config.apiAuthToken)) {
+      console.error(`[Security] Rejecting ${req.method} ${url.pathname}: API auth failed`);
+      writeUnauthorizedResponse(res);
+      return true;
     }
 
     if (req.method !== 'GET' && req.method !== 'POST' && req.method !== 'DELETE') {
